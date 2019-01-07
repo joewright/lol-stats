@@ -113,7 +113,6 @@
 					match: match
 				});
 			});
-			matches = matches.concat(matches);
 			var components = [summonerForm, matches];
 			return el('div', null, components);
 		}
