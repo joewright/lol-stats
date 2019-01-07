@@ -8,16 +8,20 @@ This is a quick demo using react/express/kayn to show recent match results for a
 
 ## Getting started
 
-After cloning the repo, you can run it locally by doing
-```bash
-# install dependencies
-npm install
+After cloning the repo, copy [example.env](./example.env) to a new file called `.env`. Be sure to set your own API key in there.
 
-# run the server
+Install dependencies via
+```bash
+npm install
+```
+
+Run the server via
+```bash
 npm run start
 ```
 
 You can now view the app at http://localhost:3000.
+
 
 ## Live Demo
 
