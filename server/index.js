@@ -10,12 +10,13 @@ const {Kayn, REGIONS} = require('kayn');
 const kayn = Kayn(process.env.RIOT_LOL_API_KEY)({region: REGIONS.NORTH_AMERICA});
 
 const app = express();
-
 app.use(express.static(path.join(__dirname, 'public')));
 
 // TODO: set cache exipiration, use a DB
 // TODO: meaningful logging
 var cache = {};
+// get common DDragon data into the cache
+loadDDragonInfo();
 
 app.post('/lol/matches', bodyParser.json(), checkCache(), (req, res) => {
 	if (!req.body.summoner) {
@@ -28,10 +29,14 @@ app.post('/lol/matches', bodyParser.json(), checkCache(), (req, res) => {
 	getMatchesByName(username, (err, result) => {
 		if (err) {
 			// TODO: some more useful error handling
-			var errorData = {error: 'Unable to find state'};
+			var errorData = {
+				error: 'Unable to find stats'
+			};
 			if (err.error && err.error.name) {
 				errorData.name = err.error.name;
 				errorData.message = err.error.message;
+			} else {
+				console.error(err);
 			}
 			return res.status(404).send(errorData);
 		}
@@ -55,27 +60,36 @@ function checkCache() {
 }
 
 function getMatchesByName(name, done) {
-	var context = {};
+	var context = {
+		champions: cache.DDragon.champions,
+		spells: cache.DDragon.spells,
+		items: cache.DDragon.items
+	};
 
 	async.series([
 		// get summoner
 		function getSummoner(next) {
+			var summonerLog = 'get summoner';
+			console.time(summonerLog);
 			kayn.SummonerV4.by.name(name)
 				.then(summoner => {
 					context.summoner = summoner;
+					console.timeEnd(summonerLog);
 					next();
 				})
 				.catch(next);
 		},
 		// get latest matches for context.summoner with details
 		function getMatches(next) {
+			var matchesLog = 'get matches with details';
+			console.time(matchesLog);
 			kayn.MatchlistV4.getRecentMatchlistByAccountID(context.summoner.accountId)
 				.then(matchList => {
+					//TODO: pagination
 					getMatchDetails(matchList, (err, details) => {
-						context.champions = details.champions;
 						context.matches = details.matches;
-						context.spells = details.spells;
 
+						console.timeEnd(matchesLog);
 						next(err);
 					});
 				})
@@ -118,7 +132,11 @@ function mapMatchWithContext(match, context) {
 	var items = _.chain(participant.stats)
 		.pick(['item0', 'item1', 'item2', 'item3', 'item4', 'item5', 'item6'])
 		.values()
-		.compact().value();
+		.map(itemId => {
+			return context.items[itemId];
+		})
+		.compact()
+		.value();
 
 	var spells = [participant.spell1Id, participant.spell2Id].map(id => {
 		return context.spells[id] || id;
@@ -142,7 +160,7 @@ function mapMatchWithContext(match, context) {
 		items: items,
 		// minion stats
 		totalCreepScore: participant.stats.totalMinionsKilled,
-		creepScorePerMinute: Math.floor(participant.stats.totalMinionsKilled / totalMinutes)
+		creepScorePerMinute: (participant.stats.totalMinionsKilled / totalMinutes).toFixed(2)
 	};
 	return mapped;
 }
@@ -151,23 +169,19 @@ function formatTime(val) {
 	return ('0' + Math.floor(val)).slice(-2);
 }
 
-function getMatchDetails(matchList, done) {
-	var details = {
+function loadDDragonInfo() {
+	cache.DDragon = {
 		champions: [],
-		matches: [],
-		spells: {}
+		spells: {},
+		items: {}
 	};
-	// list of champion IDs to retrieve
-	var champions = _.chain(matchList.matches)
-		.map('champion')
-		.uniq().value();
-
 	async.parallel([
 		// get champions
 		function getChampions(next) {
 			kayn.DDragon.Champion.listDataByIdWithParentAsId()
 				.then(championsById => {
-					details.champions = champions.map(champId => {
+					var champions = _.keys(championsById.data);
+					cache.DDragon.champions = champions.map(champId => {
 						return championsById.data[champId];
 					});
 					next();
@@ -182,24 +196,44 @@ function getMatchDetails(matchList, done) {
 					_.values(spells.data).forEach(function(spell) {
 						spellsById[spell.key] = spell.name;
 					});
-					details.spells = spellsById;
+					cache.DDragon.spells = spellsById;
 					next();
 				})
 				.catch(next);
 		},
-		// get match details
-		function getMatchDetails(next) {
-			async.eachLimit(matchList.matches, 2, (match, nextMatch) => {
-				kayn.MatchV4.get(match.gameId)
-					.then(matchDetail => {
-						_.defaults(matchDetail, match);
-						details.matches.push(matchDetail);
-						nextMatch();
-					})
-					.catch(nextMatch);
-			}, next);
+		// get items
+		function getItems(next) {
+			kayn.DDragon.Item.list()
+				.then(items => {
+					for (var itemId in items.data) {
+						cache.DDragon.items[itemId] = items.data[itemId].name;
+					}
+					next();
+				})
+				.catch(next);
 		}
 	], err => {
+		if (err) {
+			console.error('Unable to set up cache');
+			throw new Error(err);
+		}
+		console.log('DDragon cache ready');
+	});
+}
+
+function getMatchDetails(matchList, done) {
+	var details = {
+		matches: []
+	};
+	async.eachLimit(matchList.matches.slice(0, 10), 5, (match, nextMatch) => {
+		kayn.MatchV4.get(match.gameId)
+			.then(matchDetail => {
+				_.defaults(matchDetail, match);
+				details.matches.push(matchDetail);
+				nextMatch();
+			})
+			.catch(nextMatch);
+	}, err => {
 		done(err, details);
 	});
 }

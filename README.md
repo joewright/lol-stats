@@ -18,3 +18,7 @@ npm run start
 ```
 
 You can now view the app at http://localhost:3000.
+
+## Live Demo
+
+If I remembered to reset my LoL test API key, you can see it running at https://dry-basin-46299.herokuapp.com/

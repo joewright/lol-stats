@@ -9,8 +9,8 @@
 		render() {
 			var divider = el('hr');
 			
-			var summoner = el('h3', null, this.props.match.summoner.name);
-			var outcome = el('p', null, `Outcome: ${this.props.match.outcome}`);
+			var outcome = el('h3', null, `Outcome: ${this.props.match.outcome}`);
+			var summoner = el('p', null, `Summoner: ${this.props.match.summoner.name}`);
 			var duration = el('p', null, `Game Duration: ${this.props.match.duration}`);
 			
 			var spellsTitle = el('strong', null, 'Spells');
@@ -36,7 +36,7 @@
 			var creepScore = el('p', null, `Total creep score: ${this.props.match.totalCreepScore}`);
 			var creepsPerMinute = el('p', null, `Creeps per minute: ${this.props.match.creepScorePerMinute}`);
 
-			var childComponents = [divider, summoner, outcome, duration, spellsTitle, 
+			var childComponents = [divider, outcome, summoner, duration, spellsTitle, 
 				spells, runes, champion, kda, creepScore, creepsPerMinute];
 
 			if (this.props.match.items.length) {
@@ -65,8 +65,13 @@
 			});
 		}
 
-		handleSubmit() {
-			this.props.refresh(this.state.value);
+		handleRefresh() {
+			if (!this.state.value) {
+				return;
+			}
+			getMatches(this.state.value, (err, data) => {
+				this.props.refresh(data);
+			});
 		}
 
 		render() {
@@ -81,7 +86,7 @@
 			});
 			var reload = el(ReloadButton, {
 				refresh: () => {
-					this.handleSubmit();
+					this.handleRefresh();
 				}
 			});
 			return el('div', this.props, [label, input, reload]);
@@ -97,10 +102,8 @@
 				summoner: props.summoner
 			};
 		}
-		handleRefresh(summoner) {
-			getMatches(summoner, (err, data) => {
-				this.state.matches = data.matches;
-			});
+		handleRefresh(data) {
+			this.setState({matches: data.matches});
 		}
 		render() {
 			var summonerForm = el(SummonerForm, {
@@ -132,6 +135,7 @@
 	}
 
 	function getMatches(summoner, done) {
+		// TODO: show loading indicator
 		Request({
 			url: '/lol/matches',
 			method: 'POST',
